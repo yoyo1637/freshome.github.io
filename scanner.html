@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scanner de QR Code & Code-barres</title>
+    <title>Scanner Avancé de QR Code & Code-barres</title>
     
     <!-- CSS pour un design simple et propre -->
     <style>
@@ -30,24 +30,35 @@
             color: #1c1e21;
             margin-bottom: 1.5rem;
         }
-        /* La "boîte" où la vidéo de la caméra sera affichée */
         #qr-reader {
             width: 100%;
             border: 2px solid #ddd;
             border-radius: 8px;
-            overflow: hidden; /* Pour que la vidéo ne dépasse pas les coins arrondis */
+            overflow: hidden;
             margin-bottom: 1rem;
         }
-        /* Style des résultats */
         #qr-reader-results {
             margin-top: 1rem;
             font-size: 1.1rem;
             font-weight: bold;
             color: #007bff;
-            word-wrap: break-word; /* Pour que les longs liens aillent à la ligne */
+            word-wrap: break-word;
         }
-        /* Style du bouton */
-        #start-scan-btn {
+        /* Conteneur pour les contrôles */
+        .controls {
+            margin-bottom: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 10px; /* Espace entre les éléments */
+        }
+        .controls select, .controls button {
+            padding: 10px;
+            font-size: 1rem;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+        }
+        /* Style des boutons */
+        button {
             background-color: #007bff;
             color: white;
             border: none;
@@ -57,88 +68,146 @@
             cursor: pointer;
             transition: background-color 0.3s ease;
         }
-        #start-scan-btn:hover {
+        button:hover {
             background-color: #0056b3;
         }
-        #start-scan-btn:disabled {
+        button:disabled {
             background-color: #cccccc;
             cursor: not-allowed;
+        }
+        #torch-btn {
+            background-color: #6c757d;
+        }
+        #torch-btn:hover {
+            background-color: #5a6268;
         }
     </style>
 </head>
 <body>
 
     <main>
-        <h1>Scanner de QR Code & Code-barres</h1>
+        <h1>Scanner Avancé</h1>
         
-        <!-- Cet élément contiendra le viseur de la caméra -->
         <div id="qr-reader"></div>
+
+        <div class="controls">
+            <label for="camera-select">Choisir une caméra :</label>
+            <select id="camera-select"></select>
+            <!-- Le bouton pour la torche sera caché par défaut via JS -->
+            <button id="torch-btn" style="display: none;">Activer la Torche</button>
+        </div>
 
         <button id="start-scan-btn">Démarrer le Scan</button>
 
-        <!-- Cet élément affichera le résultat du scan -->
         <h3>Résultat :</h3>
         <div id="qr-reader-results">En attente d'un scan...</div>
     </main>
 
-    <!-- Inclusion de la bibliothèque html5-qrcode depuis un CDN -->
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
 
     <script>
-        // Attend que le contenu de la page soit entièrement chargé
         document.addEventListener('DOMContentLoaded', (event) => {
 
             const resultsContainer = document.getElementById('qr-reader-results');
             const startScanBtn = document.getElementById('start-scan-btn');
-            let scannerIsRunning = false;
+            const cameraSelect = document.getElementById('camera-select');
+            const torchBtn = document.getElementById('torch-btn');
 
-            // Crée une instance du scanner en le liant à l'élément HTML 'qr-reader'
+            let scannerIsRunning = false;
+            let isTorchOn = false;
+            let currentTrack = null; // Pour stocker la piste vidéo actuelle
+
             const html5QrCode = new Html5Qrcode("qr-reader");
 
-            // Fonction de rappel en cas de succès du scan
+            // Fonction de succès (légèrement modifiée pour gérer l'état de la torche)
             const qrCodeSuccessCallback = (decodedText, decodedResult) => {
-                console.log(`Code détecté = ${decodedText}`, decodedResult);
                 resultsContainer.textContent = `Résultat : ${decodedText}`;
-
-                // Optionnel : Arrêter le scanner après un succès pour économiser la batterie
+                stopScanner();
+            };
+            
+            // Fonction pour arrêter proprement le scanner
+            const stopScanner = () => {
                 if (scannerIsRunning) {
-                    html5QrCode.stop().then((ignore) => {
-                        console.log("Scanner arrêté après succès.");
+                    html5QrCode.stop().then(() => {
+                        console.log("Scanner arrêté.");
+                        scannerIsRunning = false;
                         startScanBtn.textContent = "Démarrer un nouveau Scan";
                         startScanBtn.disabled = false;
-                        scannerIsRunning = false;
+                        torchBtn.style.display = 'none'; // Cacher le bouton de la torche
+                        isTorchOn = false; // Réinitialiser l'état de la torche
+                        currentTrack = null;
                     }).catch((err) => {
                         console.error("Erreur lors de l'arrêt du scanner.", err);
                     });
                 }
             };
 
-            // Fonction de rappel en cas d'échec (un 'frame' sans code détecté)
-            // On peut l'ignorer pour ne pas surcharger la console
-            const qrCodeErrorCallback = (errorMessage) => {
-                // console.warn(`Erreur de scan : ${errorMessage}`);
+            // ---- NOUVEAU : Récupération et affichage des caméras ----
+            Html5Qrcode.getCameras().then(cameras => {
+                if (cameras && cameras.length) {
+                    cameras.forEach(camera => {
+                        const option = document.createElement('option');
+                        option.value = camera.id;
+                        option.innerHTML = camera.label;
+                        cameraSelect.appendChild(option);
+                    });
+                }
+            }).catch(err => {
+                console.error("Erreur lors de la récupération des caméras.", err);
+                resultsContainer.textContent = "Impossible de lister les caméras.";
+            });
+
+
+            // ---- NOUVEAU : Logique de la torche ----
+            const toggleTorch = async () => {
+                if (currentTrack) {
+                    try {
+                        isTorchOn = !isTorchOn;
+                        await currentTrack.applyConstraints({
+                            advanced: [{ torch: isTorchOn }]
+                        });
+                        torchBtn.textContent = isTorchOn ? 'Éteindre la Torche' : 'Activer la Torche';
+                    } catch (err) {
+                        console.error("La torche n'est pas supportée par cet appareil/navigateur.", err);
+                        alert("La torche n'est pas supportée.");
+                        torchBtn.style.display = 'none'; // Cacher si non supporté
+                    }
+                }
             };
 
-            // Configuration du scanner
-            const config = { 
-                fps: 10, // 10 images par seconde pour le scan
-                qrbox: { width: 250, height: 250 } // Définit une "boîte" de scan carrée de 250px
-            };
-            
-            // Ajoute un écouteur d'événement sur le bouton
+            torchBtn.addEventListener('click', toggleTorch);
+
+
+            // ---- MIS À JOUR : Logique du bouton de démarrage ----
             startScanBtn.addEventListener('click', () => {
+                const selectedCameraId = cameraSelect.value;
+                if (!selectedCameraId) {
+                    alert("Aucune caméra sélectionnée.");
+                    return;
+                }
+
                 startScanBtn.disabled = true;
                 startScanBtn.textContent = "Chargement de la caméra...";
 
-                // Démarre le scanner
                 html5QrCode.start(
-                    { facingMode: "environment" }, // Demande la caméra arrière du téléphone
-                    config,
+                    selectedCameraId, // Utilise l'ID de la caméra sélectionnée
+                    { 
+                        fps: 10,
+                        qrbox: { width: 250, height: 250 }
+                    },
                     qrCodeSuccessCallback,
-                    qrCodeErrorCallback
+                    (errorMessage) => { /* Ignorer les erreurs de scan non-fatales */ }
                 ).then(() => {
                     scannerIsRunning = true;
-                    // Pas besoin de changer le texte du bouton ici, car il s'arrêtera au succès
+                    // ---- NOUVEAU : Vérification du support de la torche ----
+                    const videoElement = document.querySelector('#qr-reader video');
+                    if (videoElement && videoElement.srcObject) {
+                        currentTrack = videoElement.srcObject.getVideoTracks()[0];
+                        const capabilities = currentTrack.getCapabilities();
+                        if (capabilities.torch) {
+                            torchBtn.style.display = 'block'; // Afficher le bouton
+                        }
+                    }
                 }).catch((err) => {
                     resultsContainer.textContent = `Erreur de démarrage : ${err}`;
                     startScanBtn.disabled = false;
