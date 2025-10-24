@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scanner de QR Code & Code-barres</title>
+    
+    <!-- CSS pour un design simple et propre -->
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            color: #333;
+        }
+        main {
+            background-color: white;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            max-width: 500px;
+            width: 90%;
+        }
+        h1 {
+            color: #1c1e21;
+            margin-bottom: 1.5rem;
+        }
+        /* La "boîte" où la vidéo de la caméra sera affichée */
+        #qr-reader {
+            width: 100%;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            overflow: hidden; /* Pour que la vidéo ne dépasse pas les coins arrondis */
+            margin-bottom: 1rem;
+        }
+        /* Style des résultats */
+        #qr-reader-results {
+            margin-top: 1rem;
+            font-size: 1.1rem;
+            font-weight: bold;
+            color: #007bff;
+            word-wrap: break-word; /* Pour que les longs liens aillent à la ligne */
+        }
+        /* Style du bouton */
+        #start-scan-btn {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        #start-scan-btn:hover {
+            background-color: #0056b3;
+        }
+        #start-scan-btn:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+
+    <main>
+        <h1>Scanner de QR Code & Code-barres</h1>
+        
+        <!-- Cet élément contiendra le viseur de la caméra -->
+        <div id="qr-reader"></div>
+
+        <button id="start-scan-btn">Démarrer le Scan</button>
+
+        <!-- Cet élément affichera le résultat du scan -->
+        <h3>Résultat :</h3>
+        <div id="qr-reader-results">En attente d'un scan...</div>
+    </main>
+
+    <!-- Inclusion de la bibliothèque html5-qrcode depuis un CDN -->
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+
+    <script>
+        // Attend que le contenu de la page soit entièrement chargé
+        document.addEventListener('DOMContentLoaded', (event) => {
+
+            const resultsContainer = document.getElementById('qr-reader-results');
+            const startScanBtn = document.getElementById('start-scan-btn');
+            let scannerIsRunning = false;
+
+            // Crée une instance du scanner en le liant à l'élément HTML 'qr-reader'
+            const html5QrCode = new Html5Qrcode("qr-reader");
+
+            // Fonction de rappel en cas de succès du scan
+            const qrCodeSuccessCallback = (decodedText, decodedResult) => {
+                console.log(`Code détecté = ${decodedText}`, decodedResult);
+                resultsContainer.textContent = `Résultat : ${decodedText}`;
+
+                // Optionnel : Arrêter le scanner après un succès pour économiser la batterie
+                if (scannerIsRunning) {
+                    html5QrCode.stop().then((ignore) => {
+                        console.log("Scanner arrêté après succès.");
+                        startScanBtn.textContent = "Démarrer un nouveau Scan";
+                        startScanBtn.disabled = false;
+                        scannerIsRunning = false;
+                    }).catch((err) => {
+                        console.error("Erreur lors de l'arrêt du scanner.", err);
+                    });
+                }
+            };
+
+            // Fonction de rappel en cas d'échec (un 'frame' sans code détecté)
+            // On peut l'ignorer pour ne pas surcharger la console
+            const qrCodeErrorCallback = (errorMessage) => {
+                // console.warn(`Erreur de scan : ${errorMessage}`);
+            };
+
+            // Configuration du scanner
+            const config = { 
+                fps: 10, // 10 images par seconde pour le scan
+                qrbox: { width: 250, height: 250 } // Définit une "boîte" de scan carrée de 250px
+            };
+            
+            // Ajoute un écouteur d'événement sur le bouton
+            startScanBtn.addEventListener('click', () => {
+                startScanBtn.disabled = true;
+                startScanBtn.textContent = "Chargement de la caméra...";
+
+                // Démarre le scanner
+                html5QrCode.start(
+                    { facingMode: "environment" }, // Demande la caméra arrière du téléphone
+                    config,
+                    qrCodeSuccessCallback,
+                    qrCodeErrorCallback
+                ).then(() => {
+                    scannerIsRunning = true;
+                    // Pas besoin de changer le texte du bouton ici, car il s'arrêtera au succès
+                }).catch((err) => {
+                    resultsContainer.textContent = `Erreur de démarrage : ${err}`;
+                    startScanBtn.disabled = false;
+                    startScanBtn.textContent = "Démarrer le Scan";
+                });
+            });
+        });
+    </script>
+
+</body>
+</html>
